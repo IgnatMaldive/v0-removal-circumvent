@@ -1,0 +1,86 @@
+name: Create Post Workflow
+
+on:
+  repository_dispatch:
+    types: [create-post]
+  workflow_dispatch:
+    inputs:
+      title:
+        description: 'Post title'
+        required: true
+        type: string
+      description:
+        description: 'Post description'
+        required: true
+        type: string
+      author:
+        description: 'Author name'
+        required: true
+        type: string
+      tags:
+        description: 'Tags (comma-separated)'
+        required: false
+        type: string
+      content:
+        description: 'Post content'
+        required: true
+        type: string
+
+jobs:
+  create-post:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Create post file
+      run: |
+        # Get current date
+        DATE=$(date +%Y-%m-%d)
+        
+        # Get inputs
+        TITLE="${{ github.event.inputs.title || github.event.client_payload.title }}"
+        DESCRIPTION="${{ github.event.inputs.description || github.event.client_payload.description }}"
+        AUTHOR="${{ github.event.inputs.author || github.event.client_payload.author }}"
+        TAGS="${{ github.event.inputs.tags || github.event.client_payload.tags }}"
+        CONTENT="${{ github.event.inputs.content || github.event.client_payload.content }}"
+        
+        # Create slug from title
+        SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
+        
+        # Create tags array
+        if [ -n "$TAGS" ]; then
+          TAGS_ARRAY="[\"$(echo "$TAGS" | sed 's/,/", "/g')\"]"
+        else
+          TAGS_ARRAY="[]"
+        fi
+        
+        # Create the post file
+        cat > "contents/${SLUG}.md" << EOF
+        ---
+        title: $TITLE
+        date: $DATE
+        description: $DESCRIPTION
+        author: $AUTHOR
+        tags: $TAGS_ARRAY
+        ---
+        
+        $CONTENT
+        EOF
+        
+    - name: Commit and push
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add contents/
+        git commit -m "Add new post: ${{ github.event.inputs.title || github.event.client_payload.title }}"
+        git push
+        
+    - name: Trigger deployment
+      uses: peter-evans/repository-dispatch@v3
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        event-type: deploy-blog
